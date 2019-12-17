@@ -1,0 +1,826 @@
+---
+swagger: "2.0"
+info:
+  description: "This is an internal API for the its4land platform. It provides interfaces\
+    \ for process and container management and monitoring. The API is not intended\
+    \ to be accessible from tools for various work packages which are running within\
+    \ containers."
+  version: "0.0.1"
+  title: "its4land Process API"
+host: "localhost:8080"
+basePath: "/processapi/v1"
+schemes:
+- "http"
+consumes:
+- "application/json"
+produces:
+- "application/json"
+paths:
+  /ping:
+    head:
+      tags:
+      - "info"
+      summary: "Ping API server via request header"
+      description: "Useful for testing if server is alive"
+      operationId: "pingServer"
+      parameters: []
+      responses:
+        200:
+          description: "OK"
+      x-swagger-router-controller: "Info"
+  /toolImages:
+    get:
+      tags:
+      - "containers"
+      summary: "List available Docker images for platform tools"
+      description: "The list of retrieved images can be filtered by **name** and (docker)\
+        \ **tag**.\nThe suggested Docker convention for naming images is `username/repository:tag`\
+        \ ([more details](https://docs.docker.com/glossary/?term=repository)). In\
+        \ *its4land* this convention is adopted and an image is identified by `its4land/<name-of-tool>[:tag]`.\
+        \ Name is also supplied via `LABEL name=<name-of-tool>` as image metadata\
+        \ ([LABEL reference](https://docs.docker.com/engine/reference/builder/#label)).\
+        \ \n"
+      operationId: "getToolImages"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "toolName"
+        in: "query"
+        description: "Filter images by tool name. This filter uses the `LABEL name=<value>`\
+          \ metadata supplied during image creation. E.g. If the tool is named `foo`,\
+          \ then the query becomes `/toolImages?toolName=foo`"
+        required: false
+        type: "string"
+      - name: "tag"
+        in: "query"
+        description: "Filter images by tag."
+        required: false
+        type: "string"
+      - name: "latestByTag"
+        in: "query"
+        description: "If `true`, get only the images tagged as latest. Implies `tag=latest`\
+          \ and overrides any supplied tag filters. Has precedence over `latestByVersion`\
+          \ and `latestByCreated` filters when used together."
+        required: false
+        type: "boolean"
+      - name: "latestByVersion"
+        in: "query"
+        description: "If `true`, get the latest versions of images (if version metadata\
+          \ is available). If two or more images have the same name and version metadata,\
+          \ all are returned. If version is not available in metadata, return nothing.\
+          \ Has precedence over `latestByCreated` filter when used together."
+        required: false
+        type: "boolean"
+      - name: "latestByCreated"
+        in: "query"
+        description: "If `true`, get the latest versions of the images sorted by their\
+          \ creation time."
+        required: false
+        type: "boolean"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/DockerImageInfo"
+        400:
+          description: "Bad Request"
+        404:
+          description: "Docker image not found"
+        500:
+          description: "Internal server error"
+        503:
+          description: "Docker service unavailable"
+        default:
+          description: "exception occurred when running Docker"
+      x-swagger-router-controller: "Containers"
+  /toolImages/{id}:
+    get:
+      tags:
+      - "containers"
+      summary: "List information about image with given id"
+      description: "The information is the same as the one obtained by running the\
+        \ `docker inspect` command on an image."
+      operationId: "getToolImagesById"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "id"
+        in: "path"
+        description: "Docker Id of the requested Tool.  `repository:tag` can also\
+          \ be used in place of Id."
+        required: true
+        type: "string"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            $ref: "#/definitions/ToolImage"
+          examples: {}
+        404:
+          description: "image with requested id not found"
+        500:
+          description: "Internal server error"
+        503:
+          description: "Docker service unavailable"
+      x-swagger-router-controller: "Containers"
+  /containers/create:
+    post:
+      tags:
+      - "containers"
+      summary: "Create Docker container with given parameters"
+      description: "Creates a container for a given Docker image using the given arguments.\
+        \ Returns the id of the started container."
+      operationId: "createContainer"
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      parameters:
+      - in: "body"
+        name: "ContainerRequest"
+        description: "Parmeters required for container creation. Requires that the\
+          \ executable program in the image is defined in the Dockerfile using the\
+          \ `ENTRYPOINT` instruction. Arguments supplied here as an array are then\
+          \ passed as parameters to the executable."
+        required: false
+        schema:
+          $ref: "#/definitions/ContainerRequest"
+      responses:
+        201:
+          description: "Container Created"
+          schema:
+            $ref: "#/definitions/ContainersCreateResponse"
+        404:
+          description: "Docker image not found"
+      x-swagger-router-controller: "Containers"
+  /containers/{cid}/start:
+    post:
+      tags:
+      - "containers"
+      summary: "Start a Docker container with the given id"
+      description: "Internally invokes `docker run` on the given image. Returns the\
+        \ id of the started container"
+      operationId: "startContainer"
+      consumes:
+      - "application/json"
+      - "application/octet-stream"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "cid"
+        in: "path"
+        description: "Docker ID of image to run"
+        required: true
+        type: "string"
+      responses:
+        204:
+          description: "Container started"
+        304:
+          description: "Container already running"
+        404:
+          description: "requested image not available"
+        503:
+          description: "Docker service unavailable"
+        default:
+          description: "exception occurred when running Docker"
+      x-swagger-router-controller: "Containers"
+  /containers/{cid}/stop:
+    post:
+      tags:
+      - "containers"
+      summary: "Stop a running Docker container"
+      description: "Stop a running container. Attempts to stop via SIGTERM first and\
+        \ SIGKILL after 5 seconds"
+      operationId: "stopContainer"
+      consumes:
+      - "application/json"
+      - "application/octet-stream"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "cid"
+        in: "path"
+        description: "Docker ID of image to run"
+        required: true
+        type: "string"
+      responses:
+        204:
+          description: "stopped container"
+        304:
+          description: "container already stopped"
+        404:
+          description: "no such container"
+        503:
+          description: "Docker service unavailable"
+        default:
+          description: "exception occurred when running Docker"
+      x-swagger-router-controller: "Containers"
+  /containers/{cid}/kill:
+    post:
+      tags:
+      - "containers"
+      summary: "Force stop a running Docker container"
+      description: "Forcibly stop a running container. Send SIGKILL"
+      operationId: "killContainer"
+      consumes:
+      - "application/json"
+      - "application/octet-stream"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "cid"
+        in: "path"
+        description: "Docker ID of image to run"
+        required: true
+        type: "string"
+      responses:
+        204:
+          description: "killed container"
+        404:
+          description: "no such container"
+        409:
+          description: "container not running"
+        503:
+          description: "Docker service unavailable"
+        default:
+          description: "exception occurred when running Docker"
+      x-swagger-router-controller: "Containers"
+  /containers/{cid}/remove:
+    post:
+      tags:
+      - "containers"
+      summary: "Remove container"
+      description: "Remove a container. If it is running, it is killed before removing\
+        \ it."
+      operationId: "removeContainer"
+      consumes:
+      - "application/json"
+      - "application/octet-stream"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "cid"
+        in: "path"
+        description: "Docker ID of image to run"
+        required: true
+        type: "string"
+      responses:
+        204:
+          description: "container removed"
+        404:
+          description: "no such container"
+        409:
+          description: "conflict"
+        500:
+          description: "Internal server error"
+        503:
+          description: "Docker service unavailable"
+      x-swagger-router-controller: "Containers"
+  /process/{pid}:
+    get:
+      tags:
+      - "process-management"
+      summary: "Get information about process"
+      description: "Get information about process with the given id"
+      operationId: "getProcessInfo"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "pid"
+        in: "path"
+        description: "id of process"
+        required: true
+        type: "string"
+      - name: "fields"
+        in: "query"
+        description: "Comma separated list of fields from the Process object to return.\
+          \ Eg. `fields=userid,status`"
+        required: false
+        type: "string"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            $ref: "#/definitions/Process"
+          examples: {}
+        404:
+          description: "process not found"
+      x-swagger-router-controller: "ProcessManagement"
+  /process/all/info:
+    get:
+      tags:
+      - "process-management"
+      summary: "Get status of all processes"
+      description: "Show status of all processes that are waiting, running, stopped\
+        \ or aborted in the current session."
+      operationId: "getAllProcessStatus"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "status"
+        in: "query"
+        description: "Filter by status"
+        required: false
+        type: "string"
+        enum:
+        - "WAITING"
+        - "RUNNING"
+        - "FINISHED"
+        - "ABORTED"
+      - name: "fields"
+        in: "query"
+        description: "Comma separated list of process related fields to return. By\
+          \ default all fields in the process object are returned"
+        required: false
+        type: "string"
+      - name: "sortBy"
+        in: "query"
+        description: "Sort by given process object field"
+        required: false
+        type: "string"
+      - name: "sortOrder"
+        in: "query"
+        description: "Sort ascending or descending"
+        required: false
+        type: "string"
+        enum:
+        - "asc"
+        - "desc"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/Process"
+        400:
+          description: "Invalid Request"
+          schema:
+            $ref: "#/definitions/ProcessInfo400Error"
+        404:
+          description: "Process information not found"
+        default:
+          description: "Platform error"
+          schema:
+            $ref: "#/definitions/ProcessInfo400Error"
+      x-swagger-router-controller: "ProcessManagement"
+  /process/create:
+    post:
+      tags:
+      - "process-management"
+      summary: "Create a process associated with a tool"
+      description: "A process is started in response to the user selecting a tool\
+        \ and starting the operation. In addition to encaspulating a container which\
+        \ actually runs the tool, the data model of a process also consists of metadata\
+        \ and parameters which are passed to the container as arguments.  For creation,\
+        \ `toolid` is the only required parameter. The fields `id` and `containerid`\
+        \ are filled in dynamically. Ohter fields are optional"
+      operationId: "createProcess"
+      produces:
+      - "application/json"
+      parameters:
+      - in: "body"
+        name: "body"
+        description: "Process object that is enqueued for running"
+        required: true
+        schema:
+          $ref: "#/definitions/ProcessRequest"
+      responses:
+        201:
+          description: "process created"
+          schema:
+            $ref: "#/definitions/Process"
+          examples: {}
+        405:
+          description: "invalid input"
+      x-swagger-router-controller: "ProcessManagement"
+  /process/enqueue/{pid}:
+    post:
+      tags:
+      - "process-management"
+      summary: "Add process to queue for execution"
+      description: "Add process with `pid` to the queue for execution"
+      operationId: "enqueueProcess"
+      consumes:
+      - "application/json"
+      - "application/octet-stream"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "pid"
+        in: "path"
+        description: "PID of process to queue"
+        required: true
+        type: "string"
+      responses:
+        200:
+          description: "Process Queued"
+          schema:
+            $ref: "#/definitions/ProcessEnqueueResponse"
+          examples: {}
+        404:
+          description: "process not found"
+        501:
+          description: "failed to add process to queue"
+      x-swagger-router-controller: "ProcessManagement"
+  /process/dequeue:
+    post:
+      tags:
+      - "process-management"
+      summary: "Remove process from front of queue"
+      description: "Removes process at the front of the process queue."
+      operationId: "dequeueProcess"
+      consumes:
+      - "application/json"
+      - "application/octet-stream"
+      produces:
+      - "application/json"
+      parameters: []
+      responses:
+        200:
+          description: "Process dequeued"
+          schema:
+            $ref: "#/definitions/ProcessDequeueResponse"
+          examples: {}
+        500:
+          description: "Internal error. Unable to dequeue"
+        503:
+          description: "Dequeueing deferred"
+      x-swagger-router-controller: "ProcessManagement"
+  /process/run:
+    post:
+      tags:
+      - "process-management"
+      summary: "Create, Enqueue and Dequeue process in one shot"
+      description: "Normally one uses the `create` endpoint to spawn a process, `enqueues`\
+        \ it into the process queue and then `dequeues` it to begin execution of the\
+        \  process. This endpoint conveniently allows one to do all the three steps\
+        \ in one shot rather than do them separately. The request body is similar\
+        \  to that of /process/create. The response contains individual responses\
+        \ for each of the operations."
+      operationId: "runProcessPost"
+      produces:
+      - "application/json"
+      parameters:
+      - in: "body"
+        name: "body"
+        description: "Process object that is enqueued for running"
+        required: true
+        schema:
+          $ref: "#/definitions/ProcessRequest"
+      responses:
+        201:
+          description: "Process created"
+          schema:
+            $ref: "#/definitions/ProcessRunResponse"
+        202:
+          description: "Process created, execution deferred"
+          schema:
+            $ref: "#/definitions/ProcessRunResponse"
+        405:
+          description: "Invalid input"
+        500:
+          description: "Error executing process"
+      x-swagger-router-controller: "ProcessManagement"
+  /process/{pid}/stop:
+    post:
+      tags:
+      - "process-management"
+      summary: "Stop a process"
+      description: "Stop a process with the given id"
+      operationId: "stopProcess"
+      consumes:
+      - "application/json"
+      - "application/octet-stream"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "pid"
+        in: "path"
+        description: "id of process"
+        required: true
+        type: "string"
+      responses:
+        200:
+          description: "OK"
+          schema:
+            $ref: "#/definitions/Process"
+          examples: {}
+        404:
+          description: "process not found"
+        500:
+          description: "internal server error"
+      x-swagger-router-controller: "ProcessManagement"
+definitions:
+  DockerImageInfo:
+    type: "object"
+    properties:
+      Id:
+        type: "string"
+        description: "sha256 hash associated with a Docker image"
+      Containers:
+        type: "integer"
+      Created:
+        type: "integer"
+        format: "int64"
+        description: "Creation timestamp (epoch)"
+      Labels:
+        type: "object"
+        description: "Metadata `key=value` pairs supplied during image creation"
+        additionalProperties:
+          type: "string"
+      ParentId:
+        type: "string"
+      RepoDigests:
+        type: "array"
+        items:
+          type: "string"
+      RepoTags:
+        type: "array"
+        items:
+          type: "string"
+      SharedSize:
+        type: "integer"
+        format: "int64"
+      Size:
+        type: "integer"
+        format: "int64"
+      VirtualSize:
+        type: "integer"
+        format: "int64"
+    title: "DockerImageInfo"
+    example:
+      Containers: -1
+      Created: 1531837230
+      Id: "sha256:a8e0cd29a9685a51f5de70b87ed79fb77af5288177e85554974c9e8425854145"
+      Labels:
+        description: "its4land project sketch and make tool"
+        name: "sketch-and-make"
+        version: "1.0.0"
+      ParentId: "sha256:a89c6f79ea098c12c4e76078338e8631b4aa971e7b635a4e3131f39cbcc42d1f"
+      RepoDigests: null
+      RepoTags:
+      - "its4land/sketch-and-make:latest"
+      SharedSize: -1
+      Size: 934304535
+      VirtualSize: 934304535
+  ToolImage:
+    type: "object"
+    required:
+    - "id"
+    - "name"
+    properties:
+      id:
+        type: "string"
+        description: "Docker Image Id of given tool"
+      name:
+        type: "string"
+        description: "Name of Work Package tool"
+      created:
+        type: "string"
+        description: "Creation date of image"
+      size:
+        type: "integer"
+        format: "int64"
+        description: "Size of image in bytes"
+      tag:
+        type: "string"
+        description: "Tag associated with image"
+    title: "ToolImage"
+  ContainersCreateResponse:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+    title: "Containers Create Response"
+    example:
+      id: "id"
+  ProcessRequest:
+    type: "object"
+    required:
+    - "toolImageId"
+    properties:
+      toolImageId:
+        type: "string"
+        description: "Docker image id of tool"
+      processId:
+        type: "string"
+        description: "Optional processId to identify process. If not supplied it is\
+          \ auto generated."
+      userId:
+        type: "string"
+        description: "Id of the user who created the process"
+      comment:
+        type: "string"
+        description: "User-defined comment regarding the process"
+      args:
+        type: "array"
+        description: "Arguments to be passed to the tool executable, as a JSON array"
+        items:
+          type: "string"
+      env:
+        type: "array"
+        description: "Environment variables in the format `[\"key=value\", ...]`.\
+          \ Entries without an `'='` are ignored."
+        items:
+          type: "string"
+      dockerParams:
+        type: "object"
+        description: "Additional parameters to pass to the Docker HTTP API https://docs.docker.com/engine/api/latest/.\
+          \ Values supplied here will override the values derived from other properties."
+        properties: {}
+    title: "ProcessRequest"
+    example:
+      toolId: "toolid"
+      comment: "comment"
+      args:
+      - "param1"
+      - "param2"
+      env:
+      - "FOO=value1"
+      - "BAR=value2"
+      userId: "userid"
+  Process:
+    type: "object"
+    properties:
+      toolId:
+        type: "string"
+        description: "Tool associated with this particular process"
+      version:
+        type: "string"
+        description: "Version of Tool to run"
+      userId:
+        type: "string"
+        description: "Id of the user who created the process"
+      comment:
+        type: "string"
+        description: "User-defined comment regarding the process"
+      args:
+        type: "string"
+        description: "Arguments to be passed to the tool executable, as a JSON array"
+      env:
+        type: "array"
+        description: "Environment variables in the format `[\"key=value\", ...]`.\
+          \ Entries without an `'='` are ignored."
+        items:
+          type: "string"
+      id:
+        type: "string"
+        description: "A unique id assigned to the process"
+      containerId:
+        type: "string"
+        description: "Id of Docker container associated with this process once it\
+          \ is running"
+      status:
+        $ref: "#/definitions/ProcessStatus"
+      timestamp:
+        type: "integer"
+        format: "int64"
+        description: ""
+    title: "Process"
+    example:
+      toolId: "toolid"
+      comment: "comment"
+      id: "id"
+      args:
+      - "param1"
+      - "param2"
+      env:
+      - "FOO=value1"
+      - "BAR=value2"
+      containerId: "containerid"
+      userid: "userid"
+      status: {}
+      timestamp: 0
+  ProcessDequeueResponse:
+    type: "object"
+    properties:
+      processId:
+        type: "string"
+        description: "Id of process that was dequeud for execution"
+      containerInfo:
+        type: "object"
+        description: "Information about the container in the `docker inspect` format"
+        properties: {}
+    example:
+      processId: "processId"
+      containerInfo: "{}"
+  ProcessRunResponse:
+    type: "object"
+    properties:
+      createResponse:
+        $ref: "#/definitions/Process"
+      enqueueResponse:
+        $ref: "#/definitions/ProcessEnqueueResponse"
+      dequeueResponse:
+        $ref: "#/definitions/ProcessDequeueResponse"
+    example:
+      createResponse:
+        toolId: "toolid"
+        comment: "comment"
+        id: "id"
+        args:
+        - "param1"
+        - "param2"
+        env:
+        - "FOO=value1"
+        - "BAR=value2"
+        containerId: "containerid"
+        userid: "userid"
+        status: {}
+        timestamp: 0
+      enqueueResponse:
+        queuelength: 0
+        position: 0
+      dequeueResponse:
+        processId: "processId"
+        containerInfo: "{}"
+  ProcessStatus:
+    type: "string"
+    title: "ProcessStatus"
+    enum:
+    - "WAITING"
+    - "RUNNING"
+    - "FINISHED"
+    - "ABORTED"
+  Timestamp:
+    type: "object"
+    properties:
+      created:
+        type: "string"
+        description: "UTC timestamp at which the process was created"
+      started:
+        type: "string"
+        description: "UTC timestamp at which the process started running"
+      finished:
+        type: "string"
+        description: "UTC timestamp at which the process finished"
+    title: "Timestamp"
+  ProcessEnqueueResponse:
+    type: "object"
+    properties:
+      position:
+        type: "integer"
+        format: "int32"
+        description: ""
+        minimum: 0
+      queuelength:
+        type: "integer"
+        format: "int32"
+        description: ""
+        minimum: 0
+    title: "Process Enqueue Response"
+    example:
+      queuelength: 0
+      position: 0
+  SortOrder:
+    type: "string"
+    title: "SortOrder"
+    description: "Sorting Order:\n  * `asc` - Ascending in terms of alphabet/numeric\
+      \ value/timestamp\n  * `desc` - Ascending in terms of alphabet/numeric value/timestamp"
+    enum:
+    - "asc"
+    - "desc"
+  ProcessInfo400Error:
+    type: "object"
+    properties:
+      message:
+        type: "string"
+        description: ""
+    title: "Process Info 400 Error"
+  ContainerRequest:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+        description: "Id of Docker Image"
+      args:
+        type: "array"
+        description: "Arguments passed to the executable"
+        items:
+          type: "string"
+      env:
+        type: "array"
+        description: "Environment variables in the format `[\"key=value\", ...]`.\
+          \ Entries without an `'='` are ignored."
+        items:
+          type: "string"
+      dockerParams:
+        type: "object"
+        description: "Additional parameters to pass to the Docker HTTP API https://docs.docker.com/engine/api/latest/.\
+          \ Values supplied here will override the values derived from other properties."
+        properties: {}
+    example:
+      id: "id"
+      args:
+      - "-file"
+      - "foo.txt"
+      - "-train"
+      env:
+      - "I4L_PROJECTID=pnsdemo1"
+      - "I4L_PROCESSID=2344-34"
+      dockerParams:
+        HostConfig:
+          AutoRemove: true

@@ -1,0 +1,27 @@
+{
+  "name": "its4land-public-api",
+  "version": "0.0.2",
+  "description": "The its4land Public API provides access to the services of the its4land Publish and Share platform.",
+  "main": "index.js",
+  "scripts": {
+    "prestart": "npm install",
+    "start": "node index.js"
+  },
+  "keywords": [
+    "swagger"
+  ],
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "aws-sdk": "^2.591.0",
+    "connect": "^3.2.0",
+    "geojson": "^0.5.0",
+    "js-yaml": "^3.3.0",
+    "jsonpatch": "^3.0.1",
+    "pg": "^7.14.0",
+    "redis": "^2.8.0",
+    "request": "^2.88.0",
+    "request-promise-native": "^1.0.8",
+    "swagger-tools": "0.10.1"
+  }
+}
