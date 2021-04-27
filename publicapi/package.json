@@ -19,7 +19,7 @@
     "js-yaml": "^3.3.0",
     "jsonpatch": "^3.0.1",
     "pg": "^7.14.0",
-    "redis": "^2.8.0",
+    "redis": "^3.1.1",
     "request": "^2.88.0",
     "request-promise-native": "^1.0.8",
     "swagger-tools": "0.10.1"
